@@ -38,6 +38,7 @@ import com.github.tvbox.osc.ui.dialog.SearchRemoteTvDialog;
 import com.github.tvbox.osc.ui.dialog.SelectDialog;
 import com.github.tvbox.osc.ui.dialog.XWalkInitDialog;
 import com.github.tvbox.osc.util.DanmuHelper;
+import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
@@ -45,6 +46,7 @@ import com.github.tvbox.osc.util.HistoryHelper;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.OkGoHelper;
 import com.github.tvbox.osc.util.PlayerHelper;
+import com.github.tvbox.osc.util.UpdateManager;
 import com.github.tvbox.osc.viewmodel.SourceViewModel;
 import com.lzy.okgo.OkGo;
 import com.lzy.okgo.callback.FileCallback;
@@ -209,6 +211,15 @@ public class ModelSettingFragment extends BaseLazyFragment {
                 FastClickCheckUtil.check(v);
                 AboutDialog dialog = new AboutDialog(mActivity);
                 dialog.show();
+            }
+        });
+        TextView tvCheckUpdateText = findViewById(R.id.tvCheckUpdateText);
+        tvCheckUpdateText.setText("v" + DefaultConfig.getAppVersionName(mContext));
+        findViewById(R.id.llCheckUpdate).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                FastClickCheckUtil.check(v);
+                UpdateManager.checkUpdate(mActivity, true);
             }
         });
         findViewById(R.id.llWp).setOnClickListener(new View.OnClickListener() {

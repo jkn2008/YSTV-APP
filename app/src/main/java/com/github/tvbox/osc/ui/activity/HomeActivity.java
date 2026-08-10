@@ -59,6 +59,7 @@ import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.MD5;
+import com.github.tvbox.osc.util.UpdateManager;
 import com.github.tvbox.osc.viewmodel.SourceViewModel;
 import com.orhanobut.hawk.Hawk;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
@@ -98,6 +99,7 @@ public class HomeActivity extends BaseActivity {
     private int currentSelected = 0;
     private int sortFocused = 0;
     public View sortFocusView = null;
+    private static boolean autoCheckDone = false;
     private String loadingSourceKey;
     private String previousHomeName;
     private SourceBean previousHomeSource;
@@ -670,6 +672,10 @@ public class HomeActivity extends BaseActivity {
         mHandler.removeCallbacks(refreshTopInfoTextSizeRunnable);
         mHandler.postDelayed(refreshTopInfoTextSizeRunnable, 350);
         mHandler.post(mRunnable);
+        if (!autoCheckDone) {
+            autoCheckDone = true;
+            UpdateManager.checkUpdate(HomeActivity.this, false);
+        }
     }
 
 

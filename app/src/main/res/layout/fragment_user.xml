@@ -8,12 +8,12 @@
     android:paddingRight="@dimen/vs_40">
 
     <RelativeLayout
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
         <LinearLayout
             android:id="@+id/tvUserHome"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:focusable="false"
             android:focusableInTouchMode="false"
@@ -21,8 +21,10 @@
 
             <LinearLayout
                 android:id="@+id/tvSearch"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="@dimen/vs_70"
+                android:layout_weight="1"
+                android:gravity="center"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
@@ -60,8 +62,10 @@
 
             <LinearLayout
                 android:id="@+id/tvHistory"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="@dimen/vs_70"
+                android:layout_weight="1"
+                android:gravity="center"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
@@ -98,8 +102,10 @@
 
             <LinearLayout
                 android:id="@+id/tvLive"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="@dimen/vs_70"
+                android:layout_weight="1"
+                android:gravity="center"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
@@ -136,8 +142,10 @@
 
             <LinearLayout
                 android:id="@+id/tvPush"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="@dimen/vs_70"
+                android:layout_weight="1"
+                android:gravity="center"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
@@ -174,8 +182,10 @@
 
             <LinearLayout
                 android:id="@+id/tvFavorite"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="@dimen/vs_70"
+                android:layout_weight="1"
+                android:gravity="center"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
@@ -212,8 +222,10 @@
 
             <LinearLayout
                 android:id="@+id/tvSetting"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="@dimen/vs_70"
+                android:layout_weight="1"
+                android:gravity="center"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
