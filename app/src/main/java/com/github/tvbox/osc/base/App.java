@@ -1,6 +1,7 @@
 package com.github.tvbox.osc.base;
 
 import android.app.Activity;
+import android.util.Log;
 import androidx.multidex.MultiDexApplication;
 
 import com.github.tvbox.osc.bean.VodInfo;
@@ -21,6 +22,12 @@ import com.p2p.P2PClass;
 import com.whl.quickjs.android.QuickJSLoader;
 import com.github.catvod.crawler.JsLoader;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
 import me.jessyan.autosize.AutoSizeConfig;
 import me.jessyan.autosize.unit.Subunits;
 
@@ -40,6 +47,7 @@ public class App extends MultiDexApplication {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        initCrashHandler();
         initParams();
         // OKGo
         OkGoHelper.init(); //台标获取
@@ -68,6 +76,38 @@ public class App extends MultiDexApplication {
         if (!Hawk.contains(HawkConfig.PLAY_TYPE)) {
             Hawk.put(HawkConfig.PLAY_TYPE, 1);
         }
+    }
+
+    /**
+     * 全局崩溃捕获：把 Java 层崩溃堆栈写入文件，便于电视端排查崩溃原因
+     * 日志路径：/sdcard/Android/data/包名/files/crash/crash.log
+     */
+    private void initCrashHandler() {
+        final Thread.UncaughtExceptionHandler defaultHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override
+            public void uncaughtException(Thread thread, Throwable throwable) {
+                try {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("===== ").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date())).append(" =====\n");
+                    sb.append("线程: ").append(thread.getName()).append("\n");
+                    sb.append(Log.getStackTraceString(throwable)).append("\n\n");
+                    File dir = new File(getExternalFilesDir(null), "crash");
+                    if (!dir.exists()) dir.mkdirs();
+                    File crashFile = new File(dir, "crash.log");
+                    FileOutputStream fos = new FileOutputStream(crashFile, true);
+                    fos.write(sb.toString().getBytes("UTF-8"));
+                    fos.close();
+                    LOG.e(sb.toString());
+                } catch (Throwable ignored) {
+                }
+                if (defaultHandler != null) {
+                    defaultHandler.uncaughtException(thread, throwable);
+                } else {
+                    android.os.Process.killProcess(android.os.Process.myPid());
+                }
+            }
+        });
     }
 
     public static App getInstance() {

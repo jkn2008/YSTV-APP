@@ -1525,6 +1525,11 @@ public class VodController extends BaseController {
                         return true;
                     }
                 }
+                if(mPlayerTimeSkipBtn.hasFocus()){
+                    if(setMinPlayTimeChange("et",true)){
+                        return true;
+                    }
+                }
                 View focusedView = mPlayBtnGroup.findFocus();
                 if (focusedView instanceof TextView) {
                     return true;
@@ -1533,6 +1538,9 @@ public class VodController extends BaseController {
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN ) {
                 if(mPlayerTimeStartBtn.hasFocus()){
                     if(setMinPlayTimeChange("st",false))return true;
+                }
+                if(mPlayerTimeSkipBtn.hasFocus()){
+                    if(setMinPlayTimeChange("et",false))return true;
                 }
             }
             return super.onKeyDown(keyCode, event);

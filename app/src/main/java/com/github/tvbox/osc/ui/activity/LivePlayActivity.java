@@ -178,6 +178,20 @@ public class LivePlayActivity extends BaseActivity {
     private LivePlayerManager livePlayerManager = new LivePlayerManager();
     private ArrayList<Integer> channelGroupPasswordConfirmed = new ArrayList<>();
 
+    // 换台互斥与去抖：防止电视遥控器焦点扫动/长按连发导致播放器被高频重建（卡死重启）
+    private boolean isSwitchingChannel = false;
+    private long lastChannelSwitchTime = 0;
+    private static final long CHANNEL_SWITCH_DEBOUNCE_MS = 200;
+    // 自动换源限流：连续失败超过上限后停止自动切换，避免死循环打爆播放器
+    private int autoChangeSourceCount = 0;
+    private static final int MAX_AUTO_CHANGE_SOURCE = 6;
+    private final Runnable mUnlockSwitchRun = new Runnable() {
+        @Override
+        public void run() {
+            isSwitchingChannel = false;
+        }
+    };
+
 //EPG   by 龍
     private static LiveChannelItem  channel_Name = null;
     private static Hashtable<String, ArrayList<Epginfo>> hsEpg = new Hashtable<>();
@@ -345,7 +359,7 @@ public class LivePlayActivity extends BaseActivity {
             public void onClick(View arg0) {
                 mVideoView.start();
                 iv_play.setVisibility(View.INVISIBLE);
-                countDownTimer.start();
+                if (countDownTimer != null) countDownTimer.start();
                 iv_playpause.setBackground(ContextCompat.getDrawable(LivePlayActivity.context, R.drawable.vod_pause));
             }
         });
@@ -355,13 +369,13 @@ public class LivePlayActivity extends BaseActivity {
             public void onClick(View arg0) {
                 if(mVideoView.isPlaying()){
                     mVideoView.pause();
-                    countDownTimer.cancel();
+                    if (countDownTimer != null) countDownTimer.cancel();
                     iv_play.setVisibility(View.VISIBLE);
                     iv_playpause.setBackground(ContextCompat.getDrawable(LivePlayActivity.context, R.drawable.icon_play));
                 }else{
                     mVideoView.start();
                     iv_play.setVisibility(View.INVISIBLE);
-                    countDownTimer.start();
+                    if (countDownTimer != null) countDownTimer.start();
                     iv_playpause.setBackground(ContextCompat.getDrawable(LivePlayActivity.context, R.drawable.vod_pause));
                 }
             }
@@ -386,8 +400,8 @@ public class LivePlayActivity extends BaseActivity {
                 }
                 if(countDownTimer!=null){
                     mVideoView.seekTo(progress);
-                    countDownTimer.cancel();
-                    countDownTimer.start();
+                    if (countDownTimer != null) countDownTimer.cancel();
+                    if (countDownTimer != null) countDownTimer.start();
                 }
             }
 
@@ -400,13 +414,13 @@ public class LivePlayActivity extends BaseActivity {
                     if(keycode==KeyEvent.KEYCODE_DPAD_CENTER||keycode==KeyEvent.KEYCODE_ENTER){
                         if(mVideoView.isPlaying()){
                             mVideoView.pause();
-                            countDownTimer.cancel();
+                            if (countDownTimer != null) countDownTimer.cancel();
                             iv_play.setVisibility(View.VISIBLE);
                             iv_playpause.setBackground(ContextCompat.getDrawable(LivePlayActivity.context, R.drawable.icon_play));
                         }else{
                             mVideoView.start();
                             iv_play.setVisibility(View.INVISIBLE);
-                            countDownTimer.start();
+                            if (countDownTimer != null) countDownTimer.start();
                             iv_playpause.setBackground(ContextCompat.getDrawable(LivePlayActivity.context, R.drawable.vod_pause));
                         }
                     }
@@ -1027,7 +1041,7 @@ public class LivePlayActivity extends BaseActivity {
             }
 
             if (countDownTimer != null) {
-                countDownTimer.cancel();
+                if (countDownTimer != null) countDownTimer.cancel();
             }
             if(!tip_epg1.getText().equals("暂无信息")){
                 ll_right_top_loading.setVisibility(View.VISIBLE);
@@ -1041,7 +1055,7 @@ public class LivePlayActivity extends BaseActivity {
                         ll_epg.setVisibility(View.GONE);
                     }
                 };
-                countDownTimer.start();
+                if (countDownTimer != null) countDownTimer.start();
             }else {
                 ll_right_top_loading.setVisibility(View.GONE);
                 ll_right_top_huikan.setVisibility(View.GONE);
@@ -1791,12 +1805,23 @@ public class LivePlayActivity extends BaseActivity {
 
     private boolean playChannel(int channelGroupIndex, int liveChannelIndex, boolean changeSource) {
         if ((channelGroupIndex == currentChannelGroupIndex && liveChannelIndex == currentLiveChannelIndex && !changeSource)
-                || (changeSource && currentLiveChannelItem.getSourceNum() == 1)) {
+                || (changeSource && currentLiveChannelItem != null && currentLiveChannelItem.getSourceNum() == 1)) {
            // showChannelInfo();
             return true;
         }
+        // 换台去抖 + 互斥，防止遥控器焦点扫动/连发导致播放器被高频重建
+        long now = System.currentTimeMillis();
+        if (now - lastChannelSwitchTime < CHANNEL_SWITCH_DEBOUNCE_MS || isSwitchingChannel) {
+            return false;
+        }
+        lastChannelSwitchTime = now;
+        isSwitchingChannel = true;
+        mHandler.removeCallbacks(mUnlockSwitchRun);
+        mHandler.postDelayed(mUnlockSwitchRun, 4000); // 看门狗：4秒强制解锁，避免卡死在切换中
         ArrayList<LiveChannelItem> groupChannels = getLiveChannels(channelGroupIndex);
         if (groupChannels == null || groupChannels.isEmpty() || liveChannelIndex < 0 || liveChannelIndex >= groupChannels.size()) {
+            mHandler.removeCallbacks(mUnlockSwitchRun);
+            isSwitchingChannel = false;
             return false;
         }
         boolean showPreviousFrame = currentLiveChannelItem != null && mVideoView != null && mVideoView.isPlaying();
@@ -1825,13 +1850,20 @@ public class LivePlayActivity extends BaseActivity {
         ll_right_top_huikan.setVisibility(View.GONE);
         if(mVideoView!=null){
             if(liveChannelHeader()!=null)LOG.i("echo-"+liveChannelHeader().toString());
+            String playChannelUrl = currentLiveChannelItem.getUrl();
+            if (TextUtils.isEmpty(playChannelUrl)) {
+                // 频道源为空，停止切换并解锁
+                mHandler.removeCallbacks(mUnlockSwitchRun);
+                isSwitchingChannel = false;
+                return false;
+            }
             if (showPreviousFrame) {
                 showSwitchChannelSnapshot();
             } else {
                 hideSwitchChannelSnapshot();
             }
             mVideoView.release();
-            mVideoView.setUrl(currentLiveChannelItem.getUrl(),liveChannelHeader());
+            mVideoView.setUrl(playChannelUrl,liveChannelHeader());
             mVideoView.start();
             showResolutionAfterChannelSwitch();
         }
@@ -2244,6 +2276,11 @@ public class LivePlayActivity extends BaseActivity {
             @Override
             public void playStateChanged(int playState) {
                 mHandler.removeCallbacks(mConnectTimeoutChangeSourceRun);
+                // 播放器状态变化即视为一次换台/换源流程结束，解除互斥锁
+                if (isSwitchingChannel) {
+                    isSwitchingChannel = false;
+                    mHandler.removeCallbacks(mUnlockSwitchRun);
+                }
                 switch (playState) {
                     case VideoView.STATE_IDLE:
                         // 空闲状态：播放器处于空闲，尚未开始播放。一般不需要自动换源。
@@ -2262,6 +2299,7 @@ public class LivePlayActivity extends BaseActivity {
                             mHandler.post(mUpdateResolutionInfoRun);
                         }
                         currentLiveChangeSourceTimes = 0;
+                        autoChangeSourceCount = 0;
                         allowLiveSwitchPlayer = true;
                         break;
                     case VideoView.STATE_ERROR:
@@ -2315,6 +2353,10 @@ public class LivePlayActivity extends BaseActivity {
 //        LOG.i("echo-liveAutoRetry switch player and replay current stream");
         allowLiveSwitchPlayer = false;
         String retryUrl = isSHIYI && !TextUtils.isEmpty(playUrl) ? playUrl : currentLiveChannelItem.getUrl();
+        if (TextUtils.isEmpty(retryUrl)) {
+            allowLiveSwitchPlayer = false;
+            return false;
+        }
         mVideoView.setUrl(retryUrl, liveChannelHeader());
         mVideoView.start();
         return true;
@@ -2323,6 +2365,17 @@ public class LivePlayActivity extends BaseActivity {
     private Runnable mConnectTimeoutChangeSourceRun = new Runnable() {
         @Override
         public void run() {
+            // 自动换源限流：连续失败达到上限后停止自动切换，避免死循环打爆播放器
+            autoChangeSourceCount++;
+            if (autoChangeSourceCount > MAX_AUTO_CHANGE_SOURCE) {
+                autoChangeSourceCount = 0;
+                allowLiveSwitchPlayer = false;
+                return;
+            }
+            if (currentLiveChannelItem == null) {
+                autoChangeSourceCount = 0;
+                return;
+            }
             if (switchLivePlayerAndReplay()) {
                 return;
             }
@@ -3260,7 +3313,8 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private boolean isNeedInputPassword(int groupIndex) {
-        return !liveChannelGroupList.get(groupIndex).getGroupPassword().isEmpty()
+        return groupIndex >= 0 && groupIndex < liveChannelGroupList.size()
+                && !liveChannelGroupList.get(groupIndex).getGroupPassword().isEmpty()
                 && !isPasswordConfirmed(groupIndex);
     }
 
@@ -3273,6 +3327,9 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private ArrayList<LiveChannelItem> getLiveChannels(int groupIndex) {
+        if (groupIndex < 0 || groupIndex >= liveChannelGroupList.size()) {
+            return new ArrayList<>();
+        }
         if (!isNeedInputPassword(groupIndex)) {
             return liveChannelGroupList.get(groupIndex).getLiveChannels();
         } else {
@@ -3432,7 +3489,7 @@ public class LivePlayActivity extends BaseActivity {
             public void onClick(View arg0) {
                 mVideoView.start();
                 iv_play.setVisibility(View.INVISIBLE);
-                countDownTimer.start();
+                if (countDownTimer != null) countDownTimer.start();
                 iv_playpause.setBackground(ContextCompat.getDrawable(LivePlayActivity.context, R.drawable.vod_pause));
             }
         });
@@ -3442,13 +3499,13 @@ public class LivePlayActivity extends BaseActivity {
             public void onClick(View arg0) {
                 if(mVideoView.isPlaying()){
                     mVideoView.pause();
-                    countDownTimer.cancel();
+                    if (countDownTimer != null) countDownTimer.cancel();
                     iv_play.setVisibility(View.VISIBLE);
                     iv_playpause.setBackground(ContextCompat.getDrawable(LivePlayActivity.context, R.drawable.icon_play));
                 }else{
                     mVideoView.start();
                     iv_play.setVisibility(View.INVISIBLE);
-                    countDownTimer.start();
+                    if (countDownTimer != null) countDownTimer.start();
                     iv_playpause.setBackground(ContextCompat.getDrawable(LivePlayActivity.context, R.drawable.vod_pause));
                 }
             }
@@ -3471,8 +3528,8 @@ public class LivePlayActivity extends BaseActivity {
                 if(fromuser){
                     if(countDownTimer!=null){
                         mVideoView.seekTo(progress);
-                        countDownTimer.cancel();
-                        countDownTimer.start();
+                        if (countDownTimer != null) countDownTimer.cancel();
+                        if (countDownTimer != null) countDownTimer.start();
                     }
                 }
             }
@@ -3484,13 +3541,13 @@ public class LivePlayActivity extends BaseActivity {
                     if(keycode==KeyEvent.KEYCODE_DPAD_CENTER||keycode==KeyEvent.KEYCODE_ENTER){
                         if(mVideoView.isPlaying()){
                             mVideoView.pause();
-                            countDownTimer.cancel();
+                            if (countDownTimer != null) countDownTimer.cancel();
                             iv_play.setVisibility(View.VISIBLE);
                             iv_playpause.setBackground(ContextCompat.getDrawable(LivePlayActivity.context, R.drawable.icon_play));
                         }else{
                             mVideoView.start();
                             iv_play.setVisibility(View.INVISIBLE);
-                            countDownTimer.start();
+                            if (countDownTimer != null) countDownTimer.start();
                             iv_playpause.setBackground(ContextCompat.getDrawable(LivePlayActivity.context, R.drawable.vod_pause));
                         }
                     }

@@ -125,9 +125,21 @@ public class IjkPlayer extends AbstractPlayer implements IMediaPlayer.OnErrorLis
 
     @Override
     public void reset() {
-        mMediaPlayer.reset();
-        mMediaPlayer.setOnVideoSizeChangedListener(this);
-        setOptions();
+        try {
+            mMediaPlayer.reset();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        try {
+            mMediaPlayer.setOnVideoSizeChangedListener(this);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        try {
+            setOptions();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -146,17 +158,21 @@ public class IjkPlayer extends AbstractPlayer implements IMediaPlayer.OnErrorLis
 
     @Override
     public void release() {
+        // 先解除所有监听，避免旧播放器回调干扰新播放器
         mMediaPlayer.setOnErrorListener(null);
         mMediaPlayer.setOnCompletionListener(null);
         mMediaPlayer.setOnInfoListener(null);
         mMediaPlayer.setOnBufferingUpdateListener(null);
         mMediaPlayer.setOnPreparedListener(null);
         mMediaPlayer.setOnVideoSizeChangedListener(null);
+        // 延迟异步释放 native 资源，避免阻塞主线程换台，同时给新播放器初始化留出时间避免竞争
+        final tv.danmaku.ijk.media.player.IjkMediaPlayer temp = mMediaPlayer;
         new Thread() {
             @Override
             public void run() {
                 try {
-                    mMediaPlayer.release();
+                    Thread.sleep(500);
+                    temp.release();
                 } catch (Exception e) {
                     e.printStackTrace();
                 }

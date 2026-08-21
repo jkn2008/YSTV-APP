@@ -187,14 +187,24 @@ public class LiveChannelItem {
     }
 
     public void setChannelUrls(ArrayList<String> channelUrls) {
-        this.channelUrls = channelUrls;
-        sourceNum = channelUrls.size();
+        this.channelUrls = channelUrls == null ? new ArrayList<>() : channelUrls;
+        sourceNum = this.channelUrls.size();
+        if (sourceIndex >= sourceNum) sourceIndex = sourceNum > 0 ? sourceNum - 1 : 0;
+        if (sourceIndex < 0) sourceIndex = 0;
     }
     public void preSource() {
+        if (sourceNum <= 0) {
+            sourceIndex = 0;
+            return;
+        }
         sourceIndex--;
         if (sourceIndex < 0) sourceIndex = sourceNum - 1;
     }
     public void nextSource() {
+        if (sourceNum <= 0) {
+            sourceIndex = 0;
+            return;
+        }
         sourceIndex++;
         if (sourceIndex == sourceNum) sourceIndex = 0;
     }
@@ -208,6 +218,8 @@ public class LiveChannelItem {
     }
 
     public String getUrl() {
+        if (channelUrls == null || channelUrls.isEmpty() || sourceIndex < 0 || sourceIndex >= channelUrls.size())
+            return null;
         return channelUrls.get(sourceIndex);
     }
 
@@ -224,6 +236,8 @@ public class LiveChannelItem {
     }
 
     public String getSourceName() {
+        if (channelSourceNames == null || channelSourceNames.isEmpty() || sourceIndex < 0 || sourceIndex >= channelSourceNames.size())
+            return "";
         return channelSourceNames.get(sourceIndex);
     }
 
@@ -237,11 +251,11 @@ public class LiveChannelItem {
         if (o == null || getClass() != o.getClass()) return false;
         LiveChannelItem that = (LiveChannelItem) o;
         return Objects.equals(channelName, that.channelName)
-                && Objects.equals(channelUrls.get(sourceIndex), that.getUrl());
+                && Objects.equals(getUrl(), that.getUrl());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(channelName, channelUrls.get(sourceIndex));
+        return Objects.hash(channelName, getUrl());
     }
 }
