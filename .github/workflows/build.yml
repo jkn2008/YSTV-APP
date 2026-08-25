@@ -1,0 +1,51 @@
+name: Build‑All‑Java‑Python
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build_all:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup JDK11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK & NDK
+        uses: android-actions/setup-android-sdk@v2
+        with:
+          api-levels: 28
+          build-tools: "33.0.2"
+          ndk: "25.2.9519653"
+
+      - name: Install python3 for py build
+        run: |
+          sudo apt update
+          sudo apt install -y python3 python3-pip
+
+      - name: chmod gradlew
+        run: chmod +x gradlew
+
+      - name: Build Java Release
+        run: ./gradlew assembleJavaRelease
+
+      - name: Build Python Release
+        run: ./gradlew assemblePythonRelease
+
+      - name: Upload Java APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TVBoxOS-Java
+          path: app/build/outputs/apk/java/release/*.apk
+
+      - name: Upload Python APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TVBoxOS‑Python
+          path: app/build/outputs/apk/python/release/*.apk
