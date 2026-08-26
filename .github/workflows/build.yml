@@ -1,11 +1,11 @@
-name: Build‑All‑Java‑Python
+name: Build‑Java‑Only
 on:
-  workflow_dispatch:
+  workflow_dispatch: # 手动运行
   push:
     branches: [ main ]
 
 jobs:
-  build_all:
+  build_java:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
@@ -24,28 +24,14 @@ jobs:
           build-tools: "33.0.2"
           ndk: "25.2.9519653"
 
-      - name: Install python3 for py build
-        run: |
-          sudo apt update
-          sudo apt install -y python3 python3-pip
-
       - name: chmod gradlew
         run: chmod +x gradlew
 
-      - name: Build Java Release
+      - name: Compile Java Release
         run: ./gradlew assembleJavaRelease
 
-      - name: Build Python Release
-        run: ./gradlew assemblePythonRelease
-
-      - name: Upload Java APK
+      - name: Upload Java APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TVBoxOS-Java
+          name: TVBoxOS-Java-Release
           path: app/build/outputs/apk/java/release/*.apk
-
-      - name: Upload Python APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: TVBoxOS‑Python
-          path: app/build/outputs/apk/python/release/*.apk
