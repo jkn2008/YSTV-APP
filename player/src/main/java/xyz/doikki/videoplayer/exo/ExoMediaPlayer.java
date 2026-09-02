@@ -184,12 +184,33 @@ public class ExoMediaPlayer extends AbstractPlayer implements Player.Listener {
         mInternalPlayer.seekTo(time);
     }
 
+    /**
+     * 串行异步释放 ExoPlayer，避免在主线程同步调用 SimpleExoPlayer.release()
+     * （释放解码器/加载器/Surface 较重）导致直播频繁换源时主线程阻塞触发 ANR 重启。
+     */
+    private static final java.util.concurrent.ExecutorService sReleaseExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+
     @Override
     public void release() {
         if (mInternalPlayer != null) {
             mInternalPlayer.removeListener(this);
-            mInternalPlayer.release();
+            // 先解绑 Surface，避免 release 时与 RenderView 回收竞争
+            try { mInternalPlayer.setVideoSurface(null); } catch (Throwable ignored) {}
+            // 先 stop 再 release，缩短同步段耗时
+            try { mInternalPlayer.stop(); } catch (Throwable ignored) {}
+            final SimpleExoPlayer temp = mInternalPlayer;
             mInternalPlayer = null;
+            sReleaseExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        temp.release();
+                    } catch (Throwable e) {
+                        Log.e("Tvbox-runtime", "echo-Exo release failed", e);
+                    }
+                }
+            });
         }
         mIsPreparing = false;
         mSpeedPlaybackParameters = null;
