@@ -176,14 +176,18 @@ public class IjkPlayer extends AbstractPlayer implements IMediaPlayer.OnErrorLis
         // 先解绑 Surface/Display，避免 release 时与 RenderView 回收竞争
         try { mMediaPlayer.setSurface(null); } catch (Throwable ignored) {}
         try { mMediaPlayer.setDisplay(null); } catch (Throwable ignored) {}
-        // 先 stop 再 release：在 playing/preparing 状态直接 release native 实例
-        // 可能触发 ijk 内部线程未安全退出导致 native 崩溃
-        try { mMediaPlayer.stop(); } catch (Throwable ignored) {}
         // 延迟异步释放 native 资源，避免阻塞主线程换台，同时给新播放器初始化留出时间避免竞争
         final tv.danmaku.ijk.media.player.IjkMediaPlayer temp = mMediaPlayer;
         sReleaseExecutor.execute(new Runnable() {
             @Override
             public void run() {
+                try {
+                    // stop 必须在后台执行：流卡死时 ijk native stop 会长时间持有 native 锁，
+                    // 在主线程同步调用会阻塞主线程导致 ANR。先 stop 再 release，
+                    // 避免 playing/preparing 状态直接 release 触发 ijk 内部线程未安全退出。
+                    temp.stop();
+                } catch (Throwable ignored) {
+                }
                 try {
                     Thread.sleep(300);
                     temp.release();

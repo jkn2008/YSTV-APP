@@ -79,11 +79,9 @@ import com.owen.tvrecyclerview.widget.V7LinearLayoutManager;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
+import org.xmlpull.v1.XmlPullParser;
+
+import android.util.Xml;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -94,6 +92,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
@@ -109,9 +108,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 
 import xyz.doikki.videoplayer.exo.ExoMediaSourceHelper;
 import xyz.doikki.videoplayer.player.VideoView;
@@ -666,10 +662,13 @@ public class LivePlayActivity extends BaseActivity {
                 } finally {
                     response.close();
                 }
+                // EPG 文件可能有几十 MB，DOM 解析耗时数秒以上，
+                // 必须留在 OkHttp 后台线程执行，否则会阻塞主线程导致 ANR（卡死按遥控器就重启）
+                final ArrayList<Epginfo> arrayList = parseEpgBody(body, finalEpgTagName, date);
                 mHandler.post(new Runnable() {
                     @Override
                     public void run() {
-                        onEpgRequestResponse(body, date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex);
+                        onEpgParsed(arrayList, date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex);
                     }
                 });
             }
@@ -690,26 +689,38 @@ public class LivePlayActivity extends BaseActivity {
 //        showBottomEpg();
     }
 
-    private void onEpgRequestResponse(String paramString, Date date, String channelNameReal, String finalEpgTagName,
-                                      String savedEpgKey, ArrayList<String> epgQueryNames, SimpleDateFormat timeFormat, int queryIndex) {
-        if (!isCurrentEpgRequest(savedEpgKey)) return;
-        if (paramString == null || paramString.trim().isEmpty()) {
-            updateEpgPanelState(false);
-            return;
-        }
-        LOG.i("echo-epgTagName:" + channelNameReal);
+    /**
+     * 在后台线程解析 EPG 响应体（XML/JSON），主线程只接收解析结果。
+     */
+    private ArrayList<Epginfo> parseEpgBody(String paramString, String finalEpgTagName, Date date) {
         ArrayList<Epginfo> arrayList = new ArrayList<Epginfo>();
+        if (paramString == null || paramString.trim().isEmpty()) {
+            return arrayList;
+        }
+        LOG.i("echo-epgTagName:" + finalEpgTagName);
         try {
             if (isXmlEpgResponse(paramString)) {
                 arrayList = parseXmlEpg(paramString, finalEpgTagName, date);
             } else if (paramString.contains("epg_data") || paramString.trim().startsWith("{")) {
                 arrayList = parseJsonEpg(paramString, date);
             }
-
-        } catch (JSONException jSONException) {
-            jSONException.printStackTrace();
+        } catch (Throwable throwable) {
+            throwable.printStackTrace();
         }
-        if (arrayList.isEmpty() && requestNextEpgQueryName(date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex)) {
+        return arrayList;
+    }
+
+    private void onEpgParsed(ArrayList<Epginfo> arrayList, Date date, String channelNameReal, String finalEpgTagName,
+                             String savedEpgKey, ArrayList<String> epgQueryNames, SimpleDateFormat timeFormat, int queryIndex) {
+        if (!isCurrentEpgRequest(savedEpgKey)) return;
+        if (arrayList == null || arrayList.isEmpty()) {
+            updateEpgPanelState(false);
+            if (requestNextEpgQueryName(date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex)) {
+                return;
+            }
+            if (requestDefaultEpgOnFailure(date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex)) {
+                return;
+            }
             return;
         }
         hsEpg.put(savedEpgKey, arrayList);
@@ -881,79 +892,114 @@ public class LivePlayActivity extends BaseActivity {
         return trimName;
     }
 
+    /**
+     * 使用 XmlPullParser 流式解析 XMLTV EPG：内存占用仅几 KB（DOM 解析几十 MB 的 EPG
+     * 需要几百 MB 内存，低端盒子上极易 OOM），速度也快数倍。在后台线程调用。
+     */
     private ArrayList<Epginfo> parseXmlEpg(String xml, String channelName, Date date) {
         ArrayList<Epginfo> epgList = new ArrayList<>();
         try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setIgnoringComments(true);
-            factory.setCoalescing(true);
-            try {
-                factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-                factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-                factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-            } catch (Exception ignored) {
-            }
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            builder.setEntityResolver((publicId, systemId) -> new InputSource(new StringReader("")));
-            Document document = builder.parse(new InputSource(new StringReader(xml)));
-            document.getDocumentElement().normalize();
-
             String targetName = normalizeEpgChannelName(channelName);
-            ArrayList<String> channelIds = new ArrayList<>();
-            NodeList channelNodes = document.getElementsByTagName("channel");
-            for (int i = 0; i < channelNodes.getLength(); i++) {
-                Node channelNode = channelNodes.item(i);
-                if (channelNode.getNodeType() != Node.ELEMENT_NODE) {
-                    continue;
-                }
-                Element channelElement = (Element) channelNode;
-                String channelId = channelElement.getAttribute("id");
-                if (targetName.equals(normalizeEpgChannelName(channelId))) {
-                    channelIds.add(channelId);
-                    continue;
-                }
-                NodeList displayNameNodes = channelElement.getElementsByTagName("display-name");
-                for (int j = 0; j < displayNameNodes.getLength(); j++) {
-                    String displayName = displayNameNodes.item(j).getTextContent();
-                    if (targetName.equals(normalizeEpgChannelName(displayName))) {
-                        channelIds.add(channelId);
+            Date dayStart = getDayStart(date);
+            Date dayEnd = new Date(dayStart.getTime() + TimeUnit.DAYS.toMillis(1));
+
+            HashSet<String> channelIds = new HashSet<>();
+            XmlPullParser parser = Xml.newPullParser();
+            parser.setInput(new StringReader(xml));
+
+            boolean inChannel = false;
+            String currentChannelId = null;
+            boolean channelIdMatched = false;
+            boolean inDisplayName = false;
+            StringBuilder displayNameBuf = null;
+
+            boolean inProgramme = false;
+            boolean progAccepted = false;
+            String progStartAttr = null;
+            String progStopAttr = null;
+            String title = "";
+            boolean inTitle = false;
+            StringBuilder titleBuf = null;
+
+            int event = parser.getEventType();
+            while (event != XmlPullParser.END_DOCUMENT) {
+                switch (event) {
+                    case XmlPullParser.START_TAG: {
+                        String name = parser.getName();
+                        if ("channel".equals(name)) {
+                            inChannel = true;
+                            currentChannelId = parser.getAttributeValue(null, "id");
+                            channelIdMatched = currentChannelId != null
+                                    && targetName.equals(normalizeEpgChannelName(currentChannelId));
+                        } else if (inChannel && "display-name".equals(name)) {
+                            inDisplayName = true;
+                            displayNameBuf = new StringBuilder();
+                        } else if ("programme".equals(name)) {
+                            inProgramme = true;
+                            String programmeChannel = parser.getAttributeValue(null, "channel");
+                            progAccepted = (programmeChannel != null && channelIds.contains(programmeChannel))
+                                    || targetName.equals(normalizeEpgChannelName(programmeChannel));
+                            progStartAttr = parser.getAttributeValue(null, "start");
+                            progStopAttr = parser.getAttributeValue(null, "stop");
+                            title = "";
+                        } else if (inProgramme && "title".equals(name)) {
+                            inTitle = true;
+                            titleBuf = new StringBuilder();
+                        }
+                        break;
+                    }
+                    case XmlPullParser.TEXT: {
+                        if (inTitle && titleBuf != null) {
+                            titleBuf.append(parser.getText());
+                        } else if (inDisplayName && displayNameBuf != null) {
+                            displayNameBuf.append(parser.getText());
+                        }
+                        break;
+                    }
+                    case XmlPullParser.END_TAG: {
+                        String name = parser.getName();
+                        if (inTitle && "title".equals(name)) {
+                            if (title.isEmpty() && titleBuf != null) {
+                                title = titleBuf.toString();
+                            }
+                            inTitle = false;
+                            titleBuf = null;
+                        } else if (inDisplayName && "display-name".equals(name)) {
+                            if (!channelIdMatched && displayNameBuf != null
+                                    && targetName.equals(normalizeEpgChannelName(displayNameBuf.toString()))) {
+                                channelIdMatched = true;
+                            }
+                            inDisplayName = false;
+                            displayNameBuf = null;
+                        } else if (inChannel && "channel".equals(name)) {
+                            if (channelIdMatched && currentChannelId != null) {
+                                channelIds.add(currentChannelId);
+                            }
+                            inChannel = false;
+                            currentChannelId = null;
+                            channelIdMatched = false;
+                        } else if (inProgramme && "programme".equals(name)) {
+                            if (progAccepted) {
+                                Date startDate = parseXmlTvDate(progStartAttr);
+                                Date endDate = parseXmlTvDate(progStopAttr);
+                                if (startDate != null && endDate != null && endDate.after(startDate)
+                                        && startDate.before(dayEnd) && endDate.after(dayStart)) {
+                                    epgList.add(createXmlEpgInfo(date, title, startDate, endDate, epgList.size()));
+                                }
+                            }
+                            inProgramme = false;
+                            progAccepted = false;
+                            progStartAttr = null;
+                            progStopAttr = null;
+                            title = "";
+                        }
                         break;
                     }
                 }
+                event = parser.next();
             }
-
-            Date dayStart = getDayStart(date);
-            Date dayEnd = new Date(dayStart.getTime() + TimeUnit.DAYS.toMillis(1));
-            NodeList programmeNodes = document.getElementsByTagName("programme");
-            for (int i = 0; i < programmeNodes.getLength(); i++) {
-                Node programmeNode = programmeNodes.item(i);
-                if (programmeNode.getNodeType() != Node.ELEMENT_NODE) {
-                    continue;
-                }
-                Element programmeElement = (Element) programmeNode;
-                String programmeChannel = programmeElement.getAttribute("channel");
-                if (!channelIds.contains(programmeChannel) && !targetName.equals(normalizeEpgChannelName(programmeChannel))) {
-                    continue;
-                }
-
-                Date startDate = parseXmlTvDate(programmeElement.getAttribute("start"));
-                Date endDate = parseXmlTvDate(programmeElement.getAttribute("stop"));
-                if (startDate == null || endDate == null || !endDate.after(startDate)) {
-                    continue;
-                }
-                if (!startDate.before(dayEnd) || !endDate.after(dayStart)) {
-                    continue;
-                }
-
-                String title = "";
-                NodeList titleNodes = programmeElement.getElementsByTagName("title");
-                if (titleNodes.getLength() > 0) {
-                    title = titleNodes.item(0).getTextContent();
-                }
-                epgList.add(createXmlEpgInfo(date, title, startDate, endDate, epgList.size()));
-            }
-        } catch (Exception exception) {
-            exception.printStackTrace();
+        } catch (Throwable throwable) {
+            throwable.printStackTrace();
         }
         return epgList;
     }
