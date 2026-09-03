@@ -1,4 +1,8 @@
 name: Build‑Java‑Fixed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   push:
@@ -17,7 +21,6 @@ jobs:
           java‑version: '11'
           distribution: 'temurin'
 
-      # 手动安装 Android SDK Command‑Line Tools，替代已失效的 android‑actions/setup‑android‑sdk
       - name: Install Android SDK cmdline‑tools
         run: |
           mkdir -p $ANDROID_HOME/cmdline-tools
@@ -39,11 +42,18 @@ jobs:
       - name: Grant execute permission gradlew
         run: chmod +x gradlew
 
-      - name: Compile Java Release APK
-        run: ./gradlew assembleJavaRelease
+      # 同时编译TV(app) 和手机版(app_mobile) Release包
+      - name: Compile Release APK
+        run: ./gradlew app:assembleRelease app_mobile:assembleRelease
 
-      - name: Upload Artifact
+      - name: Upload TV(盒子) APK
         uses: actions/upload‑artifact@v4
         with:
-          name: TVBoxOS‑Java‑Release
-          path: app/build/outputs/apk/java/release/*.apk
+          name: Yinghe‑TV‑Release
+          path: app/build/outputs/apk/release/*.apk
+
+      - name: Upload Mobile(手机) APK
+        uses: actions/upload‑artifact@v4
+        with:
+          name: Yinghe‑Mobile‑Release
+          path: app_mobile/build/outputs/apk/release/*.apk
