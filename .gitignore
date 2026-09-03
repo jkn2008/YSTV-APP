@@ -99,4 +99,10 @@ lint/tmp/
 *.hprof
 *.md
 output-metadata.json
-.github/workflows/TVBoxOSC.jks
+
+# 本地构建环境（SDK / JDK，体积大且环境相关）
+AndroidSDK/
+jdk17/
+jdk17dl.zip
+*.jks
+*.keystore

@@ -156,6 +156,13 @@ public class IjkPlayer extends AbstractPlayer implements IMediaPlayer.OnErrorLis
         }
     }
 
+    /**
+     * 串行释放 native 播放器，避免直播频繁换源时多个 IjkMediaPlayer.release()
+     * 在 native 层并发竞争导致 SIGSEGV 进程崩溃（表现为画面卡死后应用重启）。
+     */
+    private static final java.util.concurrent.ExecutorService sReleaseExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+
     @Override
     public void release() {
         // 先解除所有监听，避免旧播放器回调干扰新播放器
@@ -165,19 +172,30 @@ public class IjkPlayer extends AbstractPlayer implements IMediaPlayer.OnErrorLis
         mMediaPlayer.setOnBufferingUpdateListener(null);
         mMediaPlayer.setOnPreparedListener(null);
         mMediaPlayer.setOnVideoSizeChangedListener(null);
+        mMediaPlayer.setOnNativeInvokeListener(null);
+        // 先解绑 Surface/Display，避免 release 时与 RenderView 回收竞争
+        try { mMediaPlayer.setSurface(null); } catch (Throwable ignored) {}
+        try { mMediaPlayer.setDisplay(null); } catch (Throwable ignored) {}
         // 延迟异步释放 native 资源，避免阻塞主线程换台，同时给新播放器初始化留出时间避免竞争
         final tv.danmaku.ijk.media.player.IjkMediaPlayer temp = mMediaPlayer;
-        new Thread() {
+        sReleaseExecutor.execute(new Runnable() {
             @Override
             public void run() {
                 try {
-                    Thread.sleep(500);
+                    // stop 必须在后台执行：流卡死时 ijk native stop 会长时间持有 native 锁，
+                    // 在主线程同步调用会阻塞主线程导致 ANR。先 stop 再 release，
+                    // 避免 playing/preparing 状态直接 release 触发 ijk 内部线程未安全退出。
+                    temp.stop();
+                } catch (Throwable ignored) {
+                }
+                try {
+                    Thread.sleep(300);
                     temp.release();
-                } catch (Exception e) {
+                } catch (Throwable e) {
                     e.printStackTrace();
                 }
             }
-        }.start();
+        });
     }
 
     @Override

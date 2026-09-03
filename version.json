@@ -1,6 +1,6 @@
 {
-  "versionCode": 3,
-  "versionName": "1.1.2",
-  "updateMsg": "更新说明：\n1. 修复已知问题\n2. 优化使用体验",
-  "apkUrl": "https://tv.jink.top/tvbox/releases/tv/TvBox_v1.0.1.apk"
+  "versionCode": 5,
+  "versionName": "1.1.6",
+  "updateMsg": "更新说明：\n1. 修复直播卡死重启（IJK/EXO 播放器异步串行释放）\n2. 优化直播换源稳定性",
+  "apkUrl": "https://tv.jink.top/tvbox/releases/tv/TvBox_v1.1.6.apk"
 }

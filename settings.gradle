@@ -3,3 +3,11 @@ include ':app'
 include ':player'
 include ':quickjs'
 include ':pyramid'
+
+// 手机版（TVBoxOS-Mobile UI）模块
+include ':app_mobile'
+include ':player_mobile'
+include ':quickjs_mobile'
+include ':TabLayout'
+include ':ViewPager1Delegate'
+include ':crash'
